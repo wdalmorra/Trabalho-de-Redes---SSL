@@ -5,6 +5,8 @@ import urlparse
 import sys
 import os
 from threading import *
+import ssl
+import pprint
 
 # FLAGS PARA DEBUG
 
@@ -102,6 +104,8 @@ def Busca(url, prof_atual):
 
 	global lista_por_visitar
 
+	https = False
+
 	houve_erro = False
 
 	parse = urlparse.urlparse(url)
@@ -131,16 +135,43 @@ def Busca(url, prof_atual):
 		if not path:
 			path = '/'
 
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+		if(re.match(r'https', scheme)):
+			ssl_sock = ssl.wrap_socket(s,
+						ca_certs="/etc/ssl/certs/ca-certificates.crt",
+						cert_reqs=ssl.CERT_REQUIRED)
+			port = 443
+			ssl_sock.connect((host, port))
+			print repr(ssl_sock.getpeername())
+			print ssl_sock.cipher()
+			aux = ssl_sock.getpeercert()
+			if aux:
+				print pprint.pformat(aux)
+			https = True
+
 		# Inicia a comunicacao, envia a requisicao e recebe o cabecalho
 		# mais o inicio do conteudo, se houver
-		try:
-			s = socket.create_connection((host, port), 10)
-			s.send("GET " + path + " HTTP/1.1\r\nHost: "+ host + "\r\n\r\n")
-			strg = s.recv(BLOCO)
-		
-		except socket.error:
-			msg += SinalizaErro()
-			houve_erro = True
+		if https:
+			try:
+				ssl_sock.send("GET " + path + " HTTP/1.1\r\nHost: "+ host + "\r\n\r\n")
+				strg = ssl_sock.read()
+				# print strg
+			
+			except socket.error:
+				msg += SinalizaErro()
+				print msg
+				houve_erro = True
+		else:
+			try:
+				s.connect((host, port))
+				s.send("GET " + path + " HTTP/1.1\r\nHost: "+ host + "\r\n\r\n")
+				strg = s.recv(BLOCO)
+			
+			except socket.error:
+				msg += SinalizaErro()
+				print msg
+				houve_erro = True
 
 		if not houve_erro:
 
@@ -205,7 +236,11 @@ def Busca(url, prof_atual):
 						while (bytes_recebidos < tam):
 
 							try:
-								strg = s.recv(BLOCO)
+								if https:
+									strg = ssl_sock.read()
+									# print strg
+								else:
+									strg = s.recv(BLOCO)
 								# print len(strg)
 								ultimo_br = bytes_recebidos
 								bytes_recebidos += len(strg)
@@ -228,7 +263,11 @@ def Busca(url, prof_atual):
 						while(tentativas > 0):
 
 							try:
-								strg = s.recv(BLOCO)
+								if https:
+									strg = ssl_sock.read()
+									# print strg
+								else:
+									strg = s.recv(BLOCO)
 								bytes_recebidos = (len(strg))
 								conteudo = conteudo + strg
 
@@ -295,10 +334,13 @@ def Busca(url, prof_atual):
 						print msg
 			
 				else:
-					msg += '\t<resposta com codigo invalido>\n'
+					msg += '\t<resposta com codigo invalido>' + str(codigo_retorno) + '\n'
 					print msg
 						
-				s.close()
+				if https:
+					ssl_sock.close()
+				else:
+					s.close()
 	else:
 		lock.release()
 
