@@ -5,6 +5,8 @@ import urlparse
 import sys
 import os
 from threading import *
+import ssl
+import pprint
 
 # FLAGS PARA DEBUG
 
@@ -102,6 +104,8 @@ def Busca(url, prof_atual):
 
 	global lista_por_visitar
 
+	https = False
+
 	houve_erro = False
 
 	parse = urlparse.urlparse(url)
@@ -131,23 +135,42 @@ def Busca(url, prof_atual):
 		if not path:
 			path = '/'
 
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+		if(re.match(r'https', scheme)):
+			ssl_sock = ssl.wrap_socket(s,
+						ca_certs="/etc/ssl/certs/ca-certificates.crt",
+						cert_reqs=ssl.CERT_REQUIRED)
+			port = 443
+			ssl_sock.connect((host, port))
+			https = True
+
 		# Inicia a comunicacao, envia a requisicao e recebe o cabecalho
 		# mais o inicio do conteudo, se houver
 		try:
-			s = socket.create_connection((host, port), 10)
-			s.send("GET " + path + " HTTP/1.1\r\nHost: "+ host + "\r\n\r\n")
-			strg = s.recv(BLOCO)
-		
+			if https:
+				ssl_sock.send("GET " + path + " HTTP/1.1\r\nHost: "+ host + "\r\n\r\n")
+				strg = ssl_sock.read()
+
+			else:
+				s.connect((host, port))
+				s.send("GET " + path + " HTTP/1.1\r\nHost: "+ host + "\r\n\r\n")
+				strg = s.recv(BLOCO)
+			
 		except socket.error:
 			msg += SinalizaErro()
+			print msg
 			houve_erro = True
 
 		if not houve_erro:
 
 			bytes_recebidos = len(strg)
 
+			chunked = False
+
 			# Separa o cabecalho do inicio do conteudo
 			resposta = re.match(r'(.*?)\n\r\n(.*)', strg, re.DOTALL)
+			# print resposta
 			if resposta:
 				cabecalho = resposta.group(1)
 				conteudo = resposta.group(2)
@@ -168,6 +191,9 @@ def Busca(url, prof_atual):
 
 				else:
 					tamanho_disponivel = False
+
+				if re.search(r'chunked', cabecalho):
+					chunked = True
 			
 			
 				if codigo_retorno == 200 or codigo_retorno == 300:
@@ -188,12 +214,16 @@ def Busca(url, prof_atual):
 				
 					nome = 'webcrawler-output/' + caminho + '/' + arq
 
-				
-					if not DEBUG_FLAG:		# DEBUG
-						saida = open(nome, 'w')
-				
-					if not DEBUG_FLAG:		# DEBUG
-						saida.write(conteudo)
+					try:
+						if not DEBUG_FLAG:		# DEBUG
+							saida = open(nome, 'w')
+					
+						if not DEBUG_FLAG:		# DEBUG
+							saida.write(conteudo)
+
+					except:
+						msg += "\t<nao foi possivel criar o arquivo>\n"
+						houve_erro = True
 
 					# Recebe o restante do conteudo
 					# Se houver indicacao explicita de content-length,
@@ -205,13 +235,17 @@ def Busca(url, prof_atual):
 						while (bytes_recebidos < tam):
 
 							try:
-								strg = s.recv(BLOCO)
+								if https:
+									strg = ssl_sock.read()
+								else:
+									strg = s.recv(BLOCO)
+
 								# print len(strg)
 								ultimo_br = bytes_recebidos
 								bytes_recebidos += len(strg)
 								conteudo = conteudo + strg
 
-								if not DEBUG_FLAG:		# DEBUG
+								if not DEBUG_FLAG and not houve_erro:		# DEBUG
 									saida.write(strg)
 
 								if bytes_recebidos == ultimo_br:
@@ -228,12 +262,21 @@ def Busca(url, prof_atual):
 						while(tentativas > 0):
 
 							try:
-								strg = s.recv(BLOCO)
+								if https:
+									strg = ssl_sock.read()
+								else:
+									strg = s.recv(BLOCO)
+									
 								bytes_recebidos = (len(strg))
+								# print str(bytes_recebidos) + " bytes"
 								conteudo = conteudo + strg
 
-								if not DEBUG_FLAG:		# DEBUG
+								if not DEBUG_FLAG and not houve_erro:		# DEBUG
 									saida.write(strg)
+
+								if chunked:
+									if re.search(r'\r\n0\r\n\r\n', strg):
+										break
 
 							except:
 								msg += SinalizaErro()
@@ -248,8 +291,8 @@ def Busca(url, prof_atual):
 
 					# print conteudo
 
-					if not DEBUG_FLAG:		# DEBUG
-						saida.close()
+					if not DEBUG_FLAG and not houve_erro:		# DEBUG
+							saida.close()
 
 					# Procura todos os links dentro de tags
 					# <a href> na pagina recebida
@@ -270,6 +313,13 @@ def Busca(url, prof_atual):
 				
 					if not houve_erro:
 						msg += "\t<recebido>\n"
+						if https:
+							aux = ssl_sock.getpeercert()
+							if aux:
+								aux = re.search(r'\'organizationName\', u\'([^\']+)\'', str(aux['subject']))
+								if aux:
+									msg += "\t<dono do certificado: " + aux.group(1) + ">\n"
+								# print '### TEM CERTIFICADO ###'
 				
 					print msg
 			
@@ -278,7 +328,7 @@ def Busca(url, prof_atual):
 
 					caminho = CriaDiretorios(host,path,False)
 				
-					re_novo_endereco = re.search(r'Location: (.+)\r', cabecalho)
+					re_novo_endereco = re.search(r'[Ll]ocation: (.+)\r', cabecalho)
 
 					if re_novo_endereco:
 						novo_endereco = re_novo_endereco.group(1)
@@ -295,10 +345,13 @@ def Busca(url, prof_atual):
 						print msg
 			
 				else:
-					msg += '\t<resposta com codigo invalido>\n'
+					msg += '\t<resposta com codigo invalido>' + str(codigo_retorno) + '\n'
 					print msg
 						
-				s.close()
+				if https:
+					ssl_sock.close()
+				else:
+					s.close()
 	else:
 		lock.release()
 
