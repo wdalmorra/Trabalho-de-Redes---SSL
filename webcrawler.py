@@ -141,6 +141,7 @@ def Busca(url, prof_atual):
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 		if(re.match(r'https', scheme)):
+			cert_invalido = False
 			https = True
 			port = 443
 			ssl_sock = ssl.wrap_socket(s,
@@ -151,10 +152,16 @@ def Busca(url, prof_atual):
 				valid = ''
 
 			except:
-				ssl_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM),
-							ca_certs="ca-certificates.crt")
-				ssl_sock.connect((host, port))
-				valid = "\t<certificado nao confiavel>\n"
+				cert_invalido = True
+
+			if cert_invalido:
+				try:
+					ssl_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+								ca_certs="ca-certificates.crt")
+					ssl_sock.connect((host, port))
+					valid = "\t<certificado nao confiavel>\n"
+				except:
+					houve_erro = True
 
 		# Inicia a comunicacao, envia a requisicao e recebe o cabecalho
 		# mais o inicio do conteudo, se houver
