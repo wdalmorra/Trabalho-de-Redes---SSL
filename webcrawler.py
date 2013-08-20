@@ -1,12 +1,15 @@
 import socket
-import time
 import re
 import urlparse
 import sys
 import os
-from threading import *
 import ssl
-import pprint
+from threading import *
+try:
+	from OpenSSL import *
+	open_ssl = True
+except:
+	open_ssl = False
 
 # FLAGS PARA DEBUG
 
@@ -138,12 +141,20 @@ def Busca(url, prof_atual):
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 		if(re.match(r'https', scheme)):
-			ssl_sock = ssl.wrap_socket(s,
-						ca_certs="/etc/ssl/certs/ca-certificates.crt",
-						cert_reqs=ssl.CERT_REQUIRED)
-			port = 443
-			ssl_sock.connect((host, port))
 			https = True
+			port = 443
+			ssl_sock = ssl.wrap_socket(s,
+						ca_certs="ca-certificates.crt",
+						cert_reqs=ssl.CERT_REQUIRED)
+			try:
+				ssl_sock.connect((host, port))
+				valid = ''
+
+			except:
+				ssl_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+							ca_certs="ca-certificates.crt")
+				ssl_sock.connect((host, port))
+				valid = "\t<certificado nao confiavel>\n"
 
 		# Inicia a comunicacao, envia a requisicao e recebe o cabecalho
 		# mais o inicio do conteudo, se houver
@@ -314,20 +325,84 @@ def Busca(url, prof_atual):
 					if not houve_erro:
 						msg += "\t<recebido>\n"
 						if https:
-							aux = ssl_sock.getpeercert()
-							if aux:
-								aux = re.search(r'\'organizationName\', u\'([^\']+)\'', str(aux['subject']))
-								if aux:
-									msg += "\t<dono do certificado: " + aux.group(1) + ">\n"
-								# print '### TEM CERTIFICADO ###'
-				
+							if open_ssl:
+								try:
+									ctx = SSL.Context(SSL.SSLv23_METHOD)
+									ctx.set_options(SSL.OP_NO_SSLv2)
+									ctx.load_verify_locations("ca-certificates.crt", None)
+
+									ossl_sock = SSL.Connection(ctx, socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+									ossl_sock.connect((host, port))
+									ossl_sock.do_handshake()
+
+									cert = ossl_sock.get_peer_certificate()
+									cert_issuer = cert.get_issuer()
+
+									cert_subject = cert.get_subject()
+
+									issuer = re.search(r'/O=([^/\']+)', str(cert_issuer))
+
+									subject = re.search(r'/O=([^/\']+)', str(cert_subject))
+
+									if not subject or not issuer:
+										subject = re.search(r'/CN=([^/\']+)', str(cert_subject))
+										issuer = re.search(r'/CN=([^/\']+)', str(cert_issuer))
+
+									msg += "\t<dono do certificado: " + subject.group(1) + ">\n"
+
+									if issuer.group(1) == subject.group(1):
+										msg += "\t<certificado AUTO-ASSINADO>\n"
+									
+									ossl_sock.shutdown()
+									ossl_sock.close()
+								except:
+									msg += "\t<erro ao adquirir certificado>\n"
+
+							else:
+								lock.acquire()
+								s = ssl.get_server_certificate((host,443))
+
+								arq_cert_cod = open("cert_cod_temp","w")
+
+								arq_cert_cod.write(s)
+
+								arq_cert_cod.close()
+
+								os.system("openssl x509 -in cert_cod_temp -text -noout > cert_descod_temp")
+
+								arq_cert_descod = open("cert_descod_temp","r")
+
+								cert = arq_cert_descod.read()
+
+								arq_cert_descod.close()
+
+								issuer = re.search(r'Issuer:[\w\W]*?O=([^,]+)',cert)
+
+								subject = re.search(r'Subject:[\w\W]*?O=([^,]+)',cert)
+
+								if not subject or not issuer:
+									subject = re.search(r'Subject:[\w\W]*?CN=([^,\n]+)',cert)
+									issuer = re.search(r'Issuer:[\w\W]*?CN=([^,\n]+)',cert)
+
+								msg += "\t<dono do certificado: " + subject.group(1) + ">\n"
+
+								if issuer.group(1) == subject.group(1):
+									msg += "\t<certificado AUTO-ASSINADO>\n"
+
+
+								os.system("rm cert_cod_temp")
+								os.system("rm cert_descod_temp")
+
+								lock.release()
+
+							msg += valid
 					print msg
-			
+
 				elif codigo_retorno == 301 or codigo_retorno == 302 or codigo_retorno == 307:
 				# Fui redirecionado!
 
 					caminho = CriaDiretorios(host,path,False)
-				
+
 					re_novo_endereco = re.search(r'[Ll]ocation: (.+)\r', cabecalho)
 
 					if re_novo_endereco:
@@ -462,7 +537,6 @@ def procura():
 			Busca(url, prof_atual)
 		else:
 			break
-
 
 def main(argc, argv):
 
