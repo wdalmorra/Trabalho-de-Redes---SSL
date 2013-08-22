@@ -175,7 +175,7 @@ def Busca(url, prof_atual):
 				s.send("GET " + path + " HTTP/1.1\r\nHost: "+ host + "\r\n\r\n")
 				strg = s.recv(BLOCO)
 			
-		except:
+		except socket.error:
 			msg += SinalizaErro()
 			print msg
 			houve_erro = True

@@ -1,0 +1,69 @@
+## Universidade Federal de Pelotas
+##
+## Centro de Desenvolvimento Tecnológico
+##
+## Bacharelado em Ciência da Computação
+##
+## Redes de Computadores
+##
+## Trabalho 2 de Redes de Computadores
+##
+## Webcrawler com SSL
+##
+## Integrantes:
+## Thainan Bystronski Remboski
+## William Dalmorra de Souza
+
+
+- Linguagem -
+Este trabalho foi desenvolvido utilizando a linguagem de programação Python 2.7.3.
+
+
+- Sistema -
+Trabalho desenvolvido no sistema operacional Linux, distribuição Ubuntu, versões 12.04 (32 bits) e 13.04 (64 bits).
+
+
+- Execução -
+Para executar o webcrawler, basta executar o arquivo executeme, onde existe uma configuração exemplo que roda o seguinte comando:
+
+python webcrawler.py 2 <site>
+
+Ou, para escolher as opções manualmente, basta abrir o terminal na pasta do programa e escrever o seguinte comando:
+
+python webcrawler.py <profundidade> <url>
+
+
+- Usando o makefile -
+O arquivo makefile foi criado à fim de facilitar o trabalho de deletar as pastas e arquivos que foram baixados pelo webcrawler, além de fazer o download do OpenSSL, caso ele não esteja instalado.
+Também foram adicionados dois comandos para realização de testes automáticos.
+Ele contem um comando que deleta a pasta "webcrawler-output", para usá-lo basta apenas entrar pelo terminal na pasta do webcrawler onde se encontra o makefile e digitar:
+
+make clean
+
+O comando para instalar a biblioteca OpenSSL é:
+
+make install
+
+O comando para realizar um teste automático escolhido para demonstrar o programa é:
+
+make teste
+
+O comando para realizar um teste com certificados auto-assinados é:
+
+make auto
+
+
+- Implementação e testes -
+A implementação foi feita utilizando as bibliotecas "ssl", que é padrão do python e "OpenSSL", a qual pode ser necessária a instalação.
+
+O socket HTTP é envolvido em uma camada segura, onde é passado um arquivo de certificados, que é usado para verificar a validade do certificado do site acessado.
+
+# parte do certificado auto-assinado
+
+Os teste realizados foram para os seguintes sites (entre outros):
+https://www.google.com
+https://www.openssl.org
+https://www.facebook.com
+https://webmail.ufpel.edu.br
+https://cobalto.ufpel.edu.br
+https://ccl.northwestern.edu/netlogo/
